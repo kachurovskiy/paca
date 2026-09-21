@@ -1,0 +1,30 @@
+import { test, expect } from '@playwright/test';
+import { BrokerFixture } from './support/broker';
+
+for (const standalone of [false, true]) test(`${standalone ? 'standalone' : 'development'} footer shows actual API counts and a rolling request breakdown`, async ({ page }) => {
+  test.setTimeout(60_000);
+  const broker = new BrokerFixture(true); await broker.install(page, standalone); await broker.connected(page);
+  await page.getByRole('link', { name: 'scanner', exact: true }).click();
+  for (let index = 0; index < 30; index++) await broker.advance(page, 500);
+  await page.getByLabel('Scan the broad liquidity universe').uncheck();
+  const trigger = page.getByRole('button', { name: /Trading API:.*Market Data API:/, includeHidden: true });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Alpaca API requests' });
+  await expect(dialog).toBeVisible();
+  const trading = broker.requests.filter(url => url.hostname !== 'data.alpaca.markets').length;
+  const data = broker.requests.filter(url => url.hostname === 'data.alpaca.markets').length;
+  await expect(trigger).toHaveText(`Trading API: ${trading}/min · Market Data API: ${data}/min`);
+  await expect(dialog.getByRole('row').filter({ hasText: '/v2/assets' })).toContainText('Trading');
+  await expect(dialog.getByRole('row').filter({ hasText: '/v2/stocks/bars?feed=sip&timeframe=1Min' })).toContainText('Market Data');
+  await expect(dialog).not.toContainText('synthetic-key'); await expect(dialog).not.toContainText('synthetic-secret');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  await expect(dialog.getByRole('button', { name: 'Close API request details' })).toBeInViewport();
+  await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0); await expect(trigger).toBeFocused();
+  await trigger.click();
+  for (let second = 0; second < 61; second++) await broker.advance(page, 1000);
+  await expect(dialog.getByRole('row').filter({ hasText: '/v2/assets' })).toHaveCount(0);
+  await expect(dialog.getByRole('row').filter({ hasText: '/v2/account' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close API request details' }).click();
+  expect(broker.errors).toEqual([]); expect(broker.writes).toEqual([]);
+});

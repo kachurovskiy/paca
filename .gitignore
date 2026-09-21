@@ -1,0 +1,14 @@
+codex/
+node_modules/
+dist/
+test-results/
+test-results-*/
+native-visual-review/
+playwright-report/
+*.local
+.env*
+!.env.example
+*.tsbuildinfo
+*.log
+.DS_Store
+Thumbs.db
