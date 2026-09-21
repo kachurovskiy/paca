@@ -1,3 +1,4 @@
+import { testCipher } from '../../core/vault-test-fixtures';
 import 'fake-indexeddb/auto';
 import { expect, it, vi } from 'vitest';
 import { ScannerDataApi, calendarTimeToUtc } from '../../broker/market-data';
@@ -24,7 +25,7 @@ it.each([false, true])('loads extended-hours history within bounded pages and pr
   });
   const api = new ScannerDataApi({ keyId: 'synthetic-key', secretKey: 'synthetic-secret', environment: 'paper' },
     { fetch: fetcher, minRequestIntervalMs: 0, maxRetries: 0 });
-  const db = await openDatabase(`mean-history-${crypto.randomUUID()}`), documents = new ResearchDocuments(db, accountKey(snapshot.scope));
+  const db = await openDatabase(await testCipher(), `mean-history-${crypto.randomUUID()}`), documents = new ResearchDocuments(db, accountKey(snapshot.scope));
   try {
     const batch = await researchMean(snapshot, api, documents, new AbortController().signal, () => f.now);
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -45,7 +46,7 @@ it.each([false, true])('loads extended-hours history within bounded pages and pr
 
 it.each([false, true])('recovers an identical timed-out experiment while retaining other exposure (other experiment: %s)', async otherExperiment => {
   const f = meanReversionFixture(), snapshot = await f.capture();
-  const db = await openDatabase(`mean-retry-${crypto.randomUUID()}`), documents = new ResearchDocuments(db, accountKey(snapshot.scope));
+  const db = await openDatabase(await testCipher(), `mean-retry-${crypto.randomUUID()}`), documents = new ResearchDocuments(db, accountKey(snapshot.scope));
   try {
     let reads = 0;
     const first = await researchMean(snapshot, f.api, documents, new AbortController().signal, () => f.now + (reads++ ? 20_000 : 0));

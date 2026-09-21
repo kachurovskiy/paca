@@ -180,8 +180,7 @@ export class ExecutionStore implements ExecutionStorage {
   constructor(private readonly db: Database) {}
   async getActiveRuns(scope: string): Promise<Run[]> {
     // Detect damaged scope/status indexes once at connection without loading terminal history.
-    const prefix = JSON.stringify([scope]).slice(0, -1) + ',';
-    const [keys, scoped, active, ended] = await Promise.all([this.db.count('runs', IDBKeyRange.bound(prefix, prefix + '\uffff')),
+    const [keys, scoped, active, ended] = await Promise.all([this.db.countScopeKeys('runs', scope),
       this.db.countFromIndex('runs', 'scope', scope), this.db.countFromIndex('runs', 'active', [scope, 1]), this.db.countFromIndex('runs', 'active', [scope, 0])]);
     check(keys === scoped && scoped === active + ended);
     const values = await this.db.getAllFromIndex('runs', 'active', [scope, 1]);
@@ -200,18 +199,15 @@ export class ExecutionStore implements ExecutionStorage {
     check(run.contract === EXECUTION_CONTRACT && run.ceilingCents === run.approved.plan.capital.ceilingCents
       && run.scope === accountKey(run.approved.plan.scope) && run.active === (run.state === 'ended' ? 0 : 1));
     if (!run.active) check(ownedInventory(run).quantity === 0 && !run.commands.some(unresolved) && run.orders.every(order => !isWorkingOrder(order.status)));
-    const tx = this.db.transaction('runs', 'readwrite', { durability: 'strict' });
-    await Promise.all([tx.store.put(run), tx.done]);
+    await this.db.put('runs', run);
   }
   async getManualCommands(scope: string): Promise<ManualCommand[]> {
-    const prefix = JSON.stringify([scope]).slice(0, -1) + ',';
-    check(await this.db.count('manualCommands', IDBKeyRange.bound(prefix, prefix + '\uffff')) === await this.db.countFromIndex('manualCommands', 'scope', scope));
+    check(await this.db.countScopeKeys('manualCommands', scope) === await this.db.countFromIndex('manualCommands', 'scope', scope));
     const values = await this.db.getAllFromIndex('manualCommands', 'scope', scope);
     return values.map(value => { validateManual(value, scope); return value; });
   }
   async saveManualIntent(command: ManualCommand): Promise<void> {
     validateManual(command, command.scope);
-    const tx = this.db.transaction('manualCommands', 'readwrite', { durability: 'strict' });
-    await Promise.all([tx.store.put(command), tx.done]);
+    await this.db.put('manualCommands', command);
   }
 }

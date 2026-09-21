@@ -1,6 +1,6 @@
 import type { Database } from '../core/database';
 import type { DataReads, MarketStream } from '../broker/reads';
-import { Scanner, type ScannerSnapshot } from './service';
+import { Scanner, type ScannerSnapshot, type ScannerPreferences } from './service';
 import { ScannerCache } from '../market/cache';
 
 export type ReviewChoice = 'monitoring' | 'reviewed' | 'dismissed';
@@ -12,11 +12,11 @@ export class ScannerFeature {
   private disposed = false;
   private listeners = new Set<() => void>();
   constructor(private readonly scope: string, private readonly db: Database, reads: DataReads,
-    stream: MarketStream, cache: ScannerCache) {
+    stream: MarketStream, cache: ScannerCache, preferences: ScannerPreferences) {
     this.scanner = new Scanner(stream, () => {
       if (this.disposed) return;
       this.model = { ...this.model, snapshot: { ...this.scanner.snapshot } }; this.publish();
-    }, Date.now, { api: reads, cache });
+    }, Date.now, { api: reads, cache, preferences });
   }
   async start(): Promise<void> {
     try {
@@ -41,7 +41,7 @@ export class ScannerFeature {
   async review(symbol: string, choice: ReviewChoice): Promise<void> {
     if (this.disposed) return;
     const review: Review = { key: JSON.stringify([this.scope, symbol]), scope: this.scope, symbol, choice, at: new Date().toISOString() };
-    const tx = this.db.transaction('reviews', 'readwrite'); await tx.store.put(review); await tx.done;
+    await this.db.put('reviews', review);
     if (this.disposed) return;
     this.model = { ...this.model, reviews: [...this.model.reviews.filter(value => value.symbol !== symbol), review] };
     this.sync(); this.publish();

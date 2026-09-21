@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { BrokerFixture } from './support/broker';
+import { BrokerFixture, unlock } from './support/broker';
 
 for (const standalone of [false, true]) for (const environment of ['paper', 'live']) {
-  test(`${standalone ? 'standalone build' : 'development'} reconnects ${environment} automatically on reload and reopening until keys are forgotten`, async ({ page, context }) => {
+  test(`${standalone ? 'standalone build' : 'development'} reconnects ${environment} after password unlock on reload and reopening until keys are forgotten`, async ({ page, context }) => {
     const broker = new BrokerFixture(); await broker.install(page, standalone); await broker.connect(page, environment); await broker.ready(page, environment);
     if (environment === 'live') {
       await page.getByLabel('Arm live manual trading for this session').check();
@@ -10,7 +10,7 @@ for (const standalone of [false, true]) for (const environment of ['paper', 'liv
       await page.getByLabel('Enable live Robot entries for this connection').check();
       await page.getByRole('link', { name: 'terminal', exact: true }).click();
     }
-    await page.reload(); await broker.ready(page, environment);
+    await page.reload(); await unlock(page); await broker.ready(page, environment);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     if (environment === 'live') {
       await expect(page.getByLabel('Arm live manual trading for this session')).not.toBeChecked();
@@ -38,7 +38,7 @@ for (const standalone of [false, true]) for (const environment of ['paper', 'liv
     await reopened.getByRole('button', { name: 'Forget saved keys' }).click();
     await expect(reopened.getByLabel('API key', { exact: true })).toHaveValue('');
     await expect(reopened.getByLabel('Secret key', { exact: true })).toHaveValue('');
-    await reopened.reload();
+    await reopened.reload(); await unlock(reopened);
     await expect(reopened.locator('.mode-badge')).toHaveText('Disconnected');
     await reopened.getByRole('button', { name: 'Connect Alpaca', exact: true }).click();
     await expect(reopened.getByLabel('API key', { exact: true })).toHaveValue('');
@@ -55,7 +55,7 @@ for (const standalone of [false, true]) {
     const broker = new BrokerFixture(); await broker.install(page, standalone); await broker.connected(page);
     let attempts = 0;
     await page.route('**/v2/account', route => { attempts++; return route.fulfill({ status: 401, json: { message: 'Invalid credentials' } }); });
-    await page.reload();
+    await page.reload(); await unlock(page);
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('alert')).toContainText('Authentication failed');
     await expect(dialog.getByLabel('API key', { exact: true })).toHaveValue('synthetic-key');
@@ -74,7 +74,7 @@ for (const standalone of [false, true]) {
     const pending = new Promise<void>(resolve => { release = resolve; });
     await page.route('**/v2/account', async route => { started = true; await pending; await route.fallback(); finished = true; });
     try {
-      await page.reload(); await expect.poll(() => started).toBe(true);
+      await page.reload(); await unlock(page); await expect.poll(() => started).toBe(true);
       await expect(page.getByRole('status')).toContainText('Reconnecting to your saved paper account');
       await expect(page.getByRole('button', { name: 'Connecting…', exact: true })).toBeDisabled();
       await page.getByRole('button', { name: 'Cancel connection', exact: true }).click();
@@ -94,20 +94,20 @@ test('unavailable credential storage reports the problem without preventing conn
   await page.addInitScript(() => {
     const original = Storage.prototype.setItem;
     Storage.prototype.setItem = function (key, value) {
-      if (key === 'paca.current.credentials') throw new DOMException('Storage unavailable', 'QuotaExceededError');
+      if (key === 'paca.vault.1.credentials') throw new DOMException('Storage unavailable', 'QuotaExceededError');
       original.call(this, key, value);
     };
   });
   const broker = new BrokerFixture(); await broker.install(page); await broker.connected(page);
   await expect(page.getByRole('alert')).toContainText('Keys could not be saved');
-  await page.reload();
+  await page.reload(); await unlock(page);
   await page.getByRole('button', { name: 'Connect Alpaca', exact: true }).click();
   await expect(page.getByLabel('API key', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Secret key', { exact: true })).toHaveValue('');
   expect(broker.errors).toEqual([]);
 });
 
-test('corrupt saved credentials leave the connection form usable', async ({ page }) => {
+test('legacy plaintext credentials are ignored by the new vault', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('paca.current.credentials', '{"keyId":42,"secretKey":null,"environment":"live"}'));
   const broker = new BrokerFixture(); await broker.install(page);
   await page.getByRole('button', { name: 'Connect Alpaca', exact: true }).click();

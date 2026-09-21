@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { BrokerFixture, MINUTE, OPEN, stored } from './support/broker';
+import { BrokerFixture, unlock, MINUTE, OPEN, stored } from './support/broker';
 
 for (const standalone of [false, true]) for (const cash of [50000, 2500]) test(`${standalone ? 'standalone' : 'development'} robot budgets scale to equity within $${cash} cash and recheck funds on approval`, async ({ page }) => {
   test.setTimeout(60_000);
@@ -60,7 +60,7 @@ for (const standalone of [false, true]) test(`${standalone ? 'standalone' : 'dev
   expect((await stored(page, 'runs'))[0]).toMatchObject({
     strategy: { firstFillAt: new Date(time).toISOString() }, fills: [{ transactionTime: time }],
   });
-  await page.reload(); await broker.ready(page);
+  await page.reload(); await unlock(page); await broker.ready(page);
   await page.getByRole('button', { name: 'active', exact: true }).click();
   await page.getByRole('button', { name: 'Reconcile runs', exact: true }).click();
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
@@ -156,7 +156,7 @@ for (const standalone of [false, true]) test(`${standalone ? 'standalone' : 'dev
   expect((await stored(page, 'reviews')).some(value => value.symbol === 'STEADY' && value.choice === 'monitoring')).toBe(true);
   expect(broker.requests.some(url => url.pathname === '/v2/assets')).toBe(true);
   expect(broker.requests.some(url => url.searchParams.get('page_token') === '3000')).toBe(true);
-  await page.reload(); await broker.ready(page);
+  await page.reload(); await unlock(page); await broker.ready(page);
   await page.getByRole('group', { name: 'Review filter' }).getByRole('button', { name: 'Monitoring', exact: true }).click(); await expect(page.getByRole('button', { name: 'STEADY', exact: true })).toBeVisible();
   expect(broker.writes).toEqual([]); expect(broker.errors).toEqual([]);
 });
@@ -204,7 +204,7 @@ for (const standalone of [false, true]) for (const environment of ['paper', 'liv
   await page.getByRole('link', { name: 'robots', exact: true }).click(); await page.getByRole('button', { name: 'active', exact: true }).click();
   await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.locator('.robot-card')).toContainText('paused');
   await page.getByRole('button', { name: 'Resume', exact: true }).click(); await expect(page.locator('.robot-card')).toContainText('running');
-  await page.reload(); await broker.ready(page, environment); await expect(page.locator('.mode-badge')).toHaveText(environment === 'live' ? 'Live' : 'Paper');
+  await page.reload(); await unlock(page); await broker.ready(page, environment); await expect(page.locator('.mode-badge')).toHaveText(environment === 'live' ? 'Live' : 'Paper');
   await page.getByRole('button', { name: 'active', exact: true }).click(); await expect(page.locator('.robot-card')).toContainText('paused');
   for (let i = 0; i < 7; i++) await broker.advance(page, 1000);
   expect(broker.writes).toHaveLength(1);
@@ -295,7 +295,7 @@ for (const standalone of [false, true]) test(`broker stop survives browser reloa
   expect(stop.status).toBe('new'); expect(broker.writes).toHaveLength(1);
   Object.assign(stop, { status: 'filled', filled_qty: stop.qty, filled_avg_price: stop.stop_price, filled_at: time }); broker.positions = [];
   broker.activities.push({ activity_type: 'FILL', id: 'offline-stop', order_id: stop.id, symbol: stop.symbol, side: 'sell', qty: stop.qty, price: stop.stop_price, transaction_time: time, type: 'fill' });
-  await page.goto(resumeUrl); await broker.ready(page, 'live');
+  await page.goto(resumeUrl); await unlock(page); await broker.ready(page, 'live');
   await page.getByRole('button', { name: 'active', exact: true }).click();
   await page.getByRole('button', { name: 'Reconcile runs', exact: true }).click();
   await expect(page.getByText('No Robot inventory.', { exact: true })).toBeVisible();

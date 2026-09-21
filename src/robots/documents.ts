@@ -71,29 +71,25 @@ export class ResearchDocuments {
   }
   async saveProposal(proposal: RobotProposal, evidence?: ProposalEvidence, dismissed = false): Promise<void> {
     validateProposal(proposal, templates);
-    const tx = this.db.transaction('research', 'readwrite');
-    const key = JSON.stringify([this.scope, proposal.id]), saved = await tx.store.get(key);
-    if (saved) {
-      const prior = proposalDocument(saved, this.scope);
-      requireValue(JSON.stringify(prior.proposal) === JSON.stringify(proposal), 'research', 'proposal_is_immutable');
-      await tx.store.put({ ...prior, dismissed });
-    } else {
+    const key = JSON.stringify([this.scope, proposal.id]);
+    await this.db.update('research', key, saved => {
+      if (saved) {
+        const prior = proposalDocument(saved, this.scope);
+        requireValue(JSON.stringify(prior.proposal) === JSON.stringify(proposal), 'research', 'proposal_is_immutable');
+        return { ...prior, dismissed };
+      }
       requireValue(evidence, 'research', 'missing_offer_evidence');
-      const document = proposalDocument({ key, scope: this.scope, kind: 'proposal', proposal, dismissed, outcome: null,
+      return proposalDocument({ key, scope: this.scope, kind: 'proposal', proposal, dismissed, outcome: null,
         features: evidence.features, costs: evidence.costs, inputSymbols: evidence.inputSymbols, testedConfigurations: evidence.testedConfigurations }, this.scope);
-      await tx.store.put(document);
-    }
-    await tx.done;
+    });
   }
   async saveOutcome(id: string, outcome: ProspectiveOutcome): Promise<void> {
     validateProspectiveOutcome(outcome);
-    const tx = this.db.transaction('research', 'readwrite'), key = JSON.stringify([this.scope, id]);
-    const current = proposalDocument(await tx.store.get(key), this.scope);
-    await tx.store.put(proposalDocument({ ...current, outcome }, this.scope)); await tx.done;
+    const key = JSON.stringify([this.scope, id]);
+    await this.db.update('research', key, saved => proposalDocument({ ...proposalDocument(saved, this.scope), outcome }, this.scope));
   }
   async saveExperiment(id: string, exposure: readonly HoldoutExposure[], report: ChronologicalReport | null): Promise<void> {
     if (report) validateChronologicalReport(report);
-    const tx = this.db.transaction('research', 'readwrite');
-    await tx.store.put({ key: JSON.stringify([this.scope, id]), scope: this.scope, kind: 'experiment', id, exposure, report }); await tx.done;
+    await this.db.put('research', { key: JSON.stringify([this.scope, id]), scope: this.scope, kind: 'experiment', id, exposure, report });
   }
 }

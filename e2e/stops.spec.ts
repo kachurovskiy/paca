@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { BrokerFixture, stored } from './support/broker';
+import { BrokerFixture, unlock, stored } from './support/broker';
 
 test('Limit uses latest price without an ask, follows new quotes until edited, and replaces Auto limit', async ({ page }) => {
   const broker = new BrokerFixture(); broker.bid = broker.ask = 0;
@@ -46,7 +46,7 @@ for (const standalone of [false, true]) {
     await page.getByRole('button', { name: 'Reconcile account', exact: true }).click();
     await expect(ticket.getByRole('status')).toContainText('Stop loss at $98.50: new');
     await expect.poll(async () => (await stored(page, 'manualCommands'))[0].commitmentCents).toBe(0);
-    await page.reload(); await broker.ready(page);
+    await page.reload(); await unlock(page); await broker.ready(page);
     await page.getByRole('button', { name: 'Orders (1)', exact: true }).click();
     const stopRow = page.getByRole('row').filter({ hasText: 'Stop $98.5' });
     await expect(stopRow).toContainText(standalone ? 'GTC' : 'DAY');

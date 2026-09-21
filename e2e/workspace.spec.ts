@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { BrokerFixture, MINUTE, OPEN, stored, watchlistRequest } from './support/broker';
+import { BrokerFixture, unlock, MINUTE, OPEN, stored, saveStored, watchlistRequest } from './support/broker';
 
 for (const standalone of [false, true]) {
   test(`${standalone ? 'standalone build' : 'development'} connects, charts, trades, cancels and exports history`, async ({ page }) => {
@@ -32,7 +32,7 @@ for (const standalone of [false, true]) {
     await page.getByRole('link', { name: 'scanner', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Broad scanner' })).toBeVisible();
     await page.getByRole('link', { name: 'robots', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Paper Robots' })).toBeVisible();
     await page.getByRole('button', { name: 'forecasts', exact: true }).click(); await expect(page.getByText('No current-version offers have been retained. Forecast evidence is unavailable.')).toBeVisible();
-    await page.reload(); await broker.ready(page);
+    await page.reload(); await unlock(page); await broker.ready(page);
     await page.getByRole('link', { name: 'terminal', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Show STEADY chart', exact: true })).toBeVisible();
     expect(broker.errors).toEqual([]);
@@ -71,7 +71,7 @@ test('lost order response remains durable across reload and is never replayed', 
   await page.getByRole('button', { name: 'Buy SPY', exact: true }).click();
   await expect(page.locator('.order-ticket')).toContainText('uncertain');
   expect((await stored(page, 'manualCommands'))[0].status).toBe('uncertain');
-  await page.reload(); await broker.ready(page);
+  await page.reload(); await unlock(page); await broker.ready(page);
   await page.getByRole('button', { name: 'Buy SPY', exact: true }).click();
   await expect(page.locator('.order-ticket')).toContainText(/uncertain|unresolved/i);
   expect(broker.writes).toHaveLength(1);
@@ -177,25 +177,15 @@ for (const minutesBeforeOpen of [60, 300]) {
 test('corrupt research stays local while corrupt execution fails closed without resetting evidence', async ({ page }) => {
   const broker = new BrokerFixture(); await broker.install(page); await broker.connected(page);
   const scope = JSON.stringify(['alpaca', 'paper', broker.accountId]);
-  await page.evaluate(scope => new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open('paca-session-snapshots', 1);
-    request.onsuccess = () => { const db = request.result, tx = db.transaction('research', 'readwrite');
-      tx.objectStore('research').put({ key: JSON.stringify([scope, 'broken']), scope, kind: 'proposal', proposal: null });
-      tx.oncomplete = () => { db.close(); resolve(); }; tx.onerror = () => reject(tx.error); };
-  }), scope);
+  await saveStored(page, 'research', { key: JSON.stringify([scope, 'broken']), scope, kind: 'proposal', proposal: null });
   await page.getByRole('link', { name: 'robots', exact: true }).click();
   await expect(page.getByText('Unsupported research document.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Reconcile runs', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Command completed' })).toBeVisible();
   await page.getByRole('link', { name: 'terminal', exact: true }).click(); await page.getByRole('button', { name: 'Buy SPY', exact: true }).click();
   await expect(page.locator('.order-ticket')).toContainText('Order acknowledged');
-  await page.evaluate(scope => new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open('paca-session-snapshots', 1);
-    request.onsuccess = () => { const db = request.result, tx = db.transaction('manualCommands', 'readwrite'), store = tx.objectStore('manualCommands'), read = store.getAll();
-      read.onsuccess = () => store.put({ ...read.result[0], scope, status: 'corrupted' });
-      tx.oncomplete = () => { db.close(); resolve(); }; tx.onerror = () => reject(tx.error); };
-  }), scope);
-  await page.reload(); await broker.ready(page);
+  await saveStored(page, 'manualCommands', { ...(await stored(page, 'manualCommands'))[0], scope, status: 'corrupted' });
+  await page.reload(); await unlock(page); await broker.ready(page);
   await expect(page.locator('.notice')).toBeVisible(); await expect(page.locator('.submit-order')).toBeDisabled();
   expect((await stored(page, 'manualCommands'))[0].status).toBe('corrupted'); expect(broker.writes).toHaveLength(1); expect(broker.errors).toEqual([]);
 });

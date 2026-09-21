@@ -1,6 +1,16 @@
 import { expect, type Page, type Route, type WebSocketRoute } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import type { Bar } from '../../src/core/types';
+import { VaultCipher, type Sealed } from '../../src/core/vault';
+
+export const PASSWORD = 'synthetic workspace password';
+export async function unlock(page: Page) {
+  await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
+  if (await page.getByLabel('Confirm password', { exact: true }).count()) await page.getByLabel('Confirm password', { exact: true }).fill(PASSWORD);
+  await page.getByRole('button', { name: /^(Create password|Unlock)$/ }).click();
+  await expect(page.getByLabel('Password', { exact: true })).toHaveCount(0);
+}
 
 export const OPEN = Date.parse('2026-09-17T13:30:00Z'), MINUTE = 60_000;
 export const watchlistRequest = (url: URL, now: number) => /^\/v2\/stocks\/[^/]+\/bars$/.test(url.pathname)
@@ -58,7 +68,7 @@ export class BrokerFixture {
     return this.orders.flatMap(order => [order, ...(order.legs ?? [])]);
   }
   constructor(readonly paused = false, readonly runningClock = false) {}
-  async install(page: Page, standalone = false) {
+  async install(page: Page, standalone = false, locked = false) {
     page.on('pageerror', error => this.errors.push(error.message));
     if (this.paused || this.runningClock) {
       await page.clock.install({ time: new Date(this.now) });
@@ -170,6 +180,7 @@ export class BrokerFixture {
       socket.send(JSON.stringify([{ T: 'success', msg: 'connected' }]));
     });
     await page.goto(standalone ? '/standalone.html' : '/');
+    if (!locked) await unlock(page);
   }
   async connect(page: Page, environment = 'paper') {
     await page.getByRole('button', { name: 'Connect Alpaca', exact: true }).click();
@@ -203,11 +214,35 @@ export class BrokerFixture {
   async connected(page: Page) { await this.connect(page); await this.ready(page); }
 }
 
-export async function stored(page: Page, store: string): Promise<Record<string, unknown>[]> {
+interface RawRecord extends Sealed { key: string; scope: string; active: string }
+export async function rawStored(page: Page, store: string): Promise<RawRecord[]> {
   return page.evaluate(store => new Promise((resolve, reject) => {
-    const request = indexedDB.open('paca-session-snapshots', 1);
+    const header = JSON.parse(localStorage.getItem('paca.vault.1')!);
+    const request = indexedDB.open(`paca-vault-1-${header.salt}`, 1);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => { const db = request.result, tx = db.transaction(store), read = tx.objectStore(store).getAll();
       read.onsuccess = () => resolve(read.result); tx.oncomplete = () => db.close(); tx.onerror = () => reject(tx.error); };
   }), store);
+}
+async function encryption(page: Page) {
+  const salt = await page.evaluate(() => JSON.parse(localStorage.getItem('paca.vault.1')!).salt as string);
+  return { cipher: await VaultCipher.derive(PASSWORD, Uint8Array.from(Buffer.from(salt, 'base64'))), name: `paca-vault-1-${salt}` };
+}
+export async function stored(page: Page, store: string): Promise<Record<string, unknown>[]> {
+  const { cipher, name } = await encryption(page);
+  return Promise.all((await rawStored(page, store)).map(row => cipher.open(row, JSON.stringify([name, store, row.key, row.scope, row.active])) as Promise<Record<string, unknown>>));
+}
+export async function saveStored(page: Page, store: string, value: Record<string, unknown>) {
+  const { cipher, name } = await encryption(page), scope = JSON.parse(value.key as string)[0];
+  const row = { key: `${await cipher.index([store, 'scope', scope])}:${await cipher.index([store, 'key', value.key])}`,
+    scope: await cipher.index([store, 'scope', value.scope]), active: await cipher.index([store, 'active', [value.scope, value.active ?? null]]) };
+  await saveRaw(page, store, { ...row, ...await cipher.seal(value, JSON.stringify([name, store, row.key, row.scope, row.active])) });
+}
+export async function saveRaw(page: Page, store: string, row: RawRecord) {
+  await page.evaluate(({ store, row }) => new Promise<void>((resolve, reject) => {
+    const header = JSON.parse(localStorage.getItem('paca.vault.1')!), request = indexedDB.open(`paca-vault-1-${header.salt}`, 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => { const db = request.result, tx = db.transaction(store, 'readwrite');
+      tx.objectStore(store).put(row); tx.oncomplete = () => { db.close(); resolve(); }; tx.onerror = () => reject(tx.error); };
+  }), { store, row });
 }

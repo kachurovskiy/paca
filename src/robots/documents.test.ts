@@ -1,3 +1,4 @@
+import { testCipher } from '../core/vault-test-fixtures';
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Database } from '../core/database';
@@ -17,7 +18,7 @@ import { researchMean } from './research/mean-service';
 const opened: Database[] = [];
 afterEach(() => { opened.splice(0).forEach(db => db.close()); });
 async function setup() {
-  const db = await openDatabase(`research-${crypto.randomUUID()}`); opened.push(db);
+  const db = await openDatabase(await testCipher(), `research-${crypto.randomUUID()}`); opened.push(db);
   return { db, documents: new ResearchDocuments(db, accountKey(scope)) };
 }
 function offer(): ProposalDocument {

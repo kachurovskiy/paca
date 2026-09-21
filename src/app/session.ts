@@ -12,6 +12,7 @@ import { Trading } from '../trading/executor';
 import { AccountOwnership } from '../trading/ownership';
 import { accountKey } from '../core/account';
 import { ExecutionStore } from '../trading/storage';
+import type { Vault } from '../core/vault';
 
 /** Composition and lifetime only. Services own their state, policy and subscriptions. */
 export class Session {
@@ -29,7 +30,7 @@ export class Session {
     this.unwatchRuns = trading.subscribe(() => this.watch(this.watched));
     this.unwatchPositions = portfolio.subscribe(() => this.watch(this.watched));
   }
-  static async connect(credentials: Credentials, symbols: string[], signal: AbortSignal): Promise<Session> {
+  static async connect(vault: Vault, credentials: Credentials, symbols: string[], signal: AbortSignal): Promise<Session> {
     const feed = isOvernightTime() ? 'boats' : 'sip';
     const broker = createBroker(credentials, feed);
     let owner: AccountOwnership | null = null, db: Database | null = null, session: Session | null = null;
@@ -39,12 +40,13 @@ export class Session {
       active(); const account = await broker.account.getAccount(); active();
       if (!account.id) throw new Error('The broker returned no stable account identity.');
       const scope = { broker: 'alpaca', accountId: account.id, environment: credentials.environment };
-      owner = await AccountOwnership.acquire(scope); active(); db = await openDatabase(); active();
+      owner = await AccountOwnership.acquire(scope); active(); db = await openDatabase(vault.cipher, vault.databaseName); active();
       const storage = new ExecutionStore(db), cache = new ScannerCache();
       const market = new Market(broker.market, broker.criticalData, broker.stream, broker.routeFeed);
       const trading = new Trading(owner, broker.account, broker.mutations, market, storage);
       const portfolio = new Portfolio(broker.account, broker.market, () => storage.getRunHistory(accountKey(scope)), trading);
-      const scanner = new ScannerFeature(accountKey(scope), db, broker.data, broker.stream, cache);
+      const scanner = new ScannerFeature(accountKey(scope), db, broker.data, broker.stream, cache,
+        { load: () => vault.get('scanner'), save: config => vault.set('scanner', config) });
       const research = new Research(scope, broker.data, broker.account, new ResearchDocuments(db, accountKey(scope)), cache,
         () => market.ready(), () => trading.allocationSnapshot(), () => portfolio.outcomeFacts(trading.model.runs));
       session = new Session(credentials.environment, account.id, market, portfolio, scanner, research, trading, broker, db);

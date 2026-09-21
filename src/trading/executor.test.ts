@@ -1,3 +1,4 @@
+import { testCipher } from '../core/vault-test-fixtures';
 import { calendarTimeToUtc, fullTradingSession, FULL_SESSION_CALENDAR, tradingDate } from '../core/exchange-session';
 import { isOvernightTime } from '../core/trading-session';
 import 'fake-indexeddb/auto';
@@ -46,7 +47,7 @@ async function setup(options: { environment?: 'paper' | 'live'; template?: Strat
   input.approved.plan.opportunityKey = opportunityKey(input.approved.plan);
   const scope = input.approved.scope, plan = input.approved.plan;
   let time = NOW;
-  const db = await openDatabase(`test-${crypto.randomUUID()}`); databases.push(db);
+  const db = await openDatabase(await testCipher(), `test-${crypto.randomUUID()}`); databases.push(db);
   const stored = new ExecutionStore(db), storage = options.store?.(stored) ?? stored;
   const locks = fakeLocks();
   const orders = new Map<string, Order>(), activities: TradeActivity[] = [];

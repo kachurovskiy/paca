@@ -79,6 +79,11 @@ nav a:hover { color: #066548; background: #edf4f1; }
 .api-endpoint { max-width: 450px; overflow-wrap: anywhere; white-space: normal; }
 .api-failures { display: block; color: var(--negative); }
 main { margin-top: 24px; }
+.unlock-page { min-height: 100vh; margin: 0; padding: 32px 16px; display: grid; place-items: center; }
+.unlock-page .connect-dialog { width: min(100%, 480px); padding: 32px; }
+.unlock-page h1 { margin-top: 28px; font-size: 1.65rem; }
+.unlock-page form { display: grid; gap: 16px; }
+.unlock-page .unlock-note { margin: 24px 0 0; color: var(--muted); font-size: .9rem; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; min-width: 0; box-shadow: 0 2px 4px #20384603; }
 .terminal-grid { display: grid; grid-template-columns: 240px minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
 .terminal-center { min-width: 0; display: grid; gap: 16px; }

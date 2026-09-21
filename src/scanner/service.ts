@@ -7,6 +7,8 @@ import { DEFAULT_SCANNER_CONFIG, validateScannerConfig, buildVolumeProfile, calc
 import type { ScannerBar, ScannerConfig, ScannerEvaluation, ScannerSession, VolumeProfile } from './types';
 import { createScannerState, updateScannerState, type ScannerState } from './state';
 
+export interface ScannerPreferences { load(): unknown; save(config: ScannerConfig): Promise<void> }
+
 export interface ScannerRow { evaluation: ScannerEvaluation; state: 'Clean uptrend' | 'Fading' | 'Candidate' | 'Not qualified' | 'Data unavailable' | 'Loading history' | 'Warming quotes' | 'Forming' | 'Not live'; bars: ScannerBar[]; confirmed?: boolean }
 export interface ScannerRecentRow extends ScannerRow { lastQualifiedAt: number }
 export interface ScannerDiagnostics {
@@ -81,15 +83,17 @@ export class Scanner {
   private universeRetryAt = 0;
   private universeWarning = '';
   private cycleRequested = false;
+  private readonly preferences?: ScannerPreferences;
 
   constructor(private readonly stream: MarketStream,
     private readonly onChange: () => void, private readonly now: () => number,
-    dependencies: { api: DataReads; cache?: ScannerCache; config?: ScannerConfig }) {
+    dependencies: { api: DataReads; cache?: ScannerCache; config?: ScannerConfig; preferences?: ScannerPreferences }) {
     this.api = dependencies.api;
+    this.preferences = dependencies.preferences;
     this.cache = dependencies?.cache ?? new ScannerCache();
     let config = dependencies?.config ?? DEFAULT_SCANNER_CONFIG;
     if (!dependencies?.config) {
-      try { const saved = JSON.parse(localStorage.getItem('paca.current.scanner.config') || 'null'); if (saved) config = validateScannerConfig({ ...DEFAULT_SCANNER_CONFIG, ...saved }); } catch { /* Invalid preferences use documented defaults. */ }
+      try { const saved = this.preferences?.load(); if (saved && typeof saved === 'object') config = validateScannerConfig({ ...DEFAULT_SCANNER_CONFIG, ...saved }); } catch { /* Invalid preferences use documented defaults. */ }
     }
     this.snapshot = { status: 'disconnected', message: 'Connect to real-time SIP and overnight BOATS to scan 24/5.', session: null, rows: [], candidates: [], recentRows: [], reviewRows: [], diagnostics: emptyDiagnostics(), config: validateScannerConfig(config) };
   }
@@ -156,7 +160,9 @@ export class Scanner {
   updateConfig(patch: Partial<ScannerConfig>): void {
     const config = validateScannerConfig({ ...this.snapshot.config, ...patch, version: this.snapshot.config.version + 1 });
     this.snapshot = { ...this.snapshot, config, rows: [], candidates: [], recentRows: [], reviewRows: [] };
-    try { localStorage.setItem('paca.current.scanner.config', JSON.stringify(config)); } catch { /* Preferences remain valid for this tab. */ }
+    void this.preferences?.save(config).catch(() => {
+      if (!this.disposed) { this.snapshot.diagnostics.warnings.push('Scanner preferences could not be saved.'); this.onChange(); }
+    });
     this.generation++; this.controller.abort(); this.controller = new AbortController();
     this.stopUniverseLoad(); this.universeRetryAt = 0; this.universeWarning = '';
     this.snapshot.diagnostics.liquidityComplete = false; this.snapshot.diagnostics.liquidityProcessed = 0;

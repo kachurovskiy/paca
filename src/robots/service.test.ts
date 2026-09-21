@@ -1,3 +1,4 @@
+import { testCipher } from '../core/vault-test-fixtures';
 import 'fake-indexeddb/auto';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { AccountReads } from '../broker/capabilities';
@@ -39,7 +40,7 @@ async function setup(mode: 'fresh' | 'stale' | 'missing' | 'missing_timestamp' |
     return { status: 'failed', reasonCode: 'research_timeout', reason: 'The fixed research deadline elapsed' };
   });
   vi.spyOn(meanService, 'researchMean').mockImplementation(async snapshot => meanReversionBatch(snapshot, new Date(time).toISOString(), null, null, 0));
-  const db = await openDatabase(`research-service-${crypto.randomUUID()}`), documents = new ResearchDocuments(db, accountKey(scope));
+  const db = await openDatabase(await testCipher(), `research-service-${crypto.randomUUID()}`), documents = new ResearchDocuments(db, accountKey(scope));
   const research = new Research(scope, data, account, documents, new ScannerCache(), () => ready,
     () => ({ uncertain: false, commitments: [] }), async () => [], () => time);
   return { f, data, research, documents, close: () => { research.dispose(); db.close(); } };
