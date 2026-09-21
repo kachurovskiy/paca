@@ -1,5 +1,40 @@
 import { test, expect } from '@playwright/test';
-import { BrokerFixture } from './support/broker';
+import { BrokerFixture, DATES } from './support/broker';
+
+for (const standalone of [false, true]) test(`${standalone ? 'standalone' : 'development'} monthly performance renders every intraday observation with cash transfers excluded`, async ({ page }) => {
+  const broker = new BrokerFixture(); await broker.install(page, standalone);
+  const timestamps = DATES.flatMap(date => Array.from({ length: 64 }, (_, index) => Date.parse(`${date}T08:00:00Z`) / 1000 + index * 900));
+  const pnl = timestamps.map((_, index) => Math.round((Math.sin(index / 13) * 30 + index / 8) * 100) / 100);
+  const equity = pnl.map((value, index) => 100000 + value + (index >= 640 ? 25000 : 0) - (index >= 960 ? 10000 : 0));
+  const requests: URL[] = [];
+  await page.route('**/v2/account/portfolio/history?*', route => {
+    const url = new URL(route.request().url()); requests.push(url);
+    // A daily request gets just daily observations, as it did before this fix.
+    const indexes = timestamps.map((_, index) => index).filter(index => url.searchParams.get('timeframe') !== '1D' || index % 64 === 63);
+    return route.fulfill({ json: {
+      timestamp: indexes.map(index => timestamps[index]), equity: indexes.map(index => equity[index]),
+      profit_loss: indexes.map(index => equity[index] - 100000), base_value: 100000, base_value_asof: '2026-08-18',
+      cashflow: { CSD: indexes.map(index => index === 640 ? 25000 : 0), CSW: indexes.map(index => index === 960 ? -10000 : 0) },
+    } });
+  });
+  await broker.connected(page); await page.getByRole('link', { name: 'performance', exact: true }).click();
+  const chart = page.getByRole('img', { name: 'Portfolio P/L excluding cash transfers', exact: true });
+  await expect(chart).toBeVisible();
+  await expect(page.locator('.performance-return')).toContainText('last 30 days');
+  await expect(page.locator('.performance-panel .chart-caption')).toContainText('1,280 observations');
+  expect((await chart.locator('.performance-series').getAttribute('points'))!.split(' ')).toHaveLength(timestamps.length);
+  const money = (value: number) => value.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  await expect(page.locator('.performance-heading h2')).toHaveText(`+${money(pnl.at(-1)!)}`);
+  expect(requests).toHaveLength(1);
+  expect(Object.fromEntries(requests[0].searchParams)).toMatchObject({ period: '30D', timeframe: '15Min', intraday_reporting: 'extended_hours', pnl_reset: 'no_reset' });
+  await page.getByRole('group', { name: 'Performance metric' }).getByRole('button', { name: 'Equity', exact: true }).click();
+  await expect(page.locator('.performance-heading h2')).toHaveText(money(equity.at(-1)!));
+  expect((await page.locator('.performance-series').getAttribute('points'))!.split(' ')).toHaveLength(timestamps.length);
+  expect(requests).toHaveLength(1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  expect(broker.writes).toEqual([]); expect(broker.errors).toEqual([]);
+});
 
 for (const standalone of [false, true]) test(`${standalone ? 'standalone' : 'development'} P/L chart excludes transfers, preserves losses, and switches to equity without more requests`, async ({ page }, testInfo) => {
   const broker = new BrokerFixture(); await broker.install(page, standalone);

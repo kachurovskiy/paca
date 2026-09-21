@@ -19,6 +19,7 @@ export function PortfolioView({ session, history = false }: { session: Session; 
   }, [session, period, history]);
   const projection = session.portfolio.projection(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const values = (metric === 'pnl' ? model.history?.profitLoss : model.history?.equity) ?? [];
+  const periodLabel = period === 'ALL' ? 'all time' : period === '1M' ? 'last 30 days' : period.toLowerCase();
   return <div class={`feature-page ${history ? 'history-page' : 'performance-page'}`}><div class="page-heading"><div><span class="eyebrow">YOUR PORTFOLIO</span><h1>{history ? 'Trade history and outcomes' : 'Portfolio performance'}</h1><p>{history ? 'A closer look at your trades and realized results.' : 'Track profit and loss excluding cash transfers, or view total account equity.'}</p></div>
     {history && <div class="toolbar"><button onClick={() => void session.portfolio.history()}>Refresh history</button><button onClick={() => download('paca-history.json', JSON.stringify({ activities: model.activities, complete: model.activitiesComplete, runs: model.historyRuns }, null, 2))}>Export history</button></div>}</div>
     {history ? <>
@@ -35,11 +36,11 @@ export function PortfolioView({ session, history = false }: { session: Session; 
           <p>{metrics.netTotalPnlUsd.reasons.join('; ') || 'Complete attributed fill accounting.'}</p><pre>{JSON.stringify({ run, metrics }, null, 2)}</pre></details>;
       })}{!model.historyRuns.length && <p class="empty-state">Completed Robot runs will appear here.</p>}</section></>
       : <section class="panel performance-panel" aria-busy={loading}><div class="performance-heading"><div><span class="eyebrow">{metric === 'pnl' ? 'PROFIT / LOSS' : 'ACCOUNT EQUITY'}</span><h2 class="equity-value">{loading ? '—' : metric === 'pnl' ? <Pnl value={values.at(-1)} /> : money(values.at(-1))}</h2>
-        <span class="performance-return">{!loading && <>{metric === 'equity' && <><Pnl value={model.history?.profitLoss.at(-1)} /> </>}<small>{metric === 'pnl' ? 'Cash transfers excluded' : 'P/L excluding cash transfers'} · {period === 'ALL' ? 'all time' : period.toLowerCase()}</small></>}</span></div>
+        <span class="performance-return">{!loading && <>{metric === 'equity' && <><Pnl value={model.history?.profitLoss.at(-1)} /> </>}<small>{metric === 'pnl' ? 'Cash transfers excluded' : 'P/L excluding cash transfers'} · {periodLabel}</small></>}</span></div>
         <div class="performance-controls"><Segmented<PerformanceMetric> label="Performance metric" value={metric} onChange={setMetric} options={[{ value: 'pnl', label: 'P/L' }, { value: 'equity', label: 'Equity' }]} />
           <Segmented label="Performance period" value={period} onChange={setPeriod} options={periods} /></div></div>
         {model.historyError && !loading && <p role="alert">{model.historyError}</p>}
         {loading ? <div class="empty-state chart-loading" role="status">Loading performance…</div> : model.history && values.length ? <PerformanceChart history={model.history} metric={metric} /> : <div class="empty-state chart-loading">Performance unavailable.</div>}
-        <div class="chart-caption"><small>{metric === 'pnl' ? 'P/L excluding cash transfers' : 'Account equity'} · USD</small><small>New York time (ET)</small></div></section>}
+        <div class="chart-caption"><small>{metric === 'pnl' ? 'P/L excluding cash transfers' : 'Account equity'} · USD{!loading && model.history && <> · {number(values.length)} observations</>}</small><small>New York time (ET)</small></div></section>}
   </div>;
 }

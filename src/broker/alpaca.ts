@@ -270,22 +270,27 @@ export class AlpacaApi {
   }
 
   async getPortfolioHistory(period: Period): Promise<PortfolioHistory> {
-    const resolutions: Record<Period, string> = { '1D': '5Min', '1W': '1H', '1M': '1D', ALL: '1D' };
+    const resolutions: Record<Period, string> = { '1D': '1Min', '1W': '5Min', '1M': '15Min', ALL: '1D' };
     if (!(period in resolutions)) throw new Error('Choose a supported portfolio period.');
     const query = new URLSearchParams({
-      timeframe: resolutions[period], pnl_reset: 'no_reset', intraday_reporting: 'market_hours',
+      timeframe: resolutions[period], pnl_reset: 'no_reset', intraday_reporting: 'extended_hours',
       cashflow_types: CASH_TRANSFER_TYPES.join(','),
     });
     if (period === 'ALL') {
       if (this.accountCreatedAt === undefined) await this.getAccount();
-      if (!this.accountCreatedAt || Date.parse(this.accountCreatedAt) > Date.now()) {
+      const now = Date.now(), age = this.accountCreatedAt ? now - Date.parse(this.accountCreatedAt) : NaN;
+      if (!Number.isFinite(age) || age < 0) {
         throw new Error('Alpaca account creation date is unavailable. All-time portfolio history cannot be requested.');
       }
-      // The broker supports the complete account lifetime at daily resolution.
-      // Use its actual creation timestamp instead of an arbitrary year cutoff.
-      query.set('start', this.accountCreatedAt);
-      query.set('end', new Date().toISOString());
-    } else query.set('period', period);
+      // Preserve the complete lifetime. Recent accounts can use intraday data;
+      // Alpaca only supports daily history for windows longer than 30 days.
+      query.set('timeframe', age <= 86_400_000 ? '1Min' : age <= 7 * 86_400_000 ? '5Min' : age <= 30 * 86_400_000 ? '15Min' : '1D');
+      query.set('start', this.accountCreatedAt!);
+      query.set('end', new Date(now).toISOString());
+    } else {
+      // A calendar month may span 31 days, beyond Alpaca's intraday limit.
+      query.set('period', period === '1M' ? '30D' : period);
+    }
     const data = object(await this.request(`/v2/account/portfolio/history?${query}`));
     if (![data.timestamp, data.equity, data.profit_loss].every(Array.isArray)) {
       throw new Error('Alpaca returned incomplete portfolio history. History import is incomplete.');

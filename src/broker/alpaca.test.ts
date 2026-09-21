@@ -776,7 +776,7 @@ describe('AlpacaApi', () => {
     const history = await new AlpacaApi(credentials).getPortfolioHistory('1W');
     expect(history).toEqual({ timestamp: [1000, 3000], equity: [10000, 10100], profitLoss: [0, 100], profitLossPct: [0, 0.01], baseValue: 10000 });
     const url = new URL(String(fetchMock.mock.calls[0][0]));
-    expect(url.searchParams.get('timeframe')).toBe('1H');
+    expect(url.searchParams.get('timeframe')).toBe('5Min');
     expect(url.searchParams.get('pnl_reset')).toBe('no_reset');
   });
 
@@ -803,6 +803,34 @@ describe('AlpacaApi', () => {
     const url = new URL(String(fetchMock.mock.calls[1][0]));
     expect(url.searchParams.get('cashflow_types')).toBe('CSD,CSW,JNLC,ACATC');
   });
+
+  it.each([['1D', '1Min', '1D'], ['1W', '5Min', '1W'], ['1M', '15Min', '30D']] as const)(
+    'loads %s history at %s resolution with one extended-session request', async (period, timeframe, requestedPeriod) => {
+      // August has 31 days; a calendar-month intraday request can exceed the API limit.
+      vi.setSystemTime(new Date('2026-09-21T17:30:00Z'));
+      fetchMock.mockResolvedValueOnce(response({ timestamp: [1000, 2000], equity: [10000, 15100],
+        profit_loss: [0, 5100], base_value: 10000, base_value_asof: '1970-01-01', cashflow: { CSD: [0, 5000] } }));
+      const history = await new AlpacaApi(credentials).getPortfolioHistory(period);
+      expect(history.profitLoss).toEqual([0, 100]); expect(fetchMock).toHaveBeenCalledOnce();
+      const query = new URL(String(fetchMock.mock.calls[0][0])).searchParams;
+      expect(query.get('timeframe')).toBe(timeframe); expect(query.get('period')).toBe(requestedPeriod);
+      expect(query.get('intraday_reporting')).toBe('extended_hours'); expect(query.get('pnl_reset')).toBe('no_reset');
+      expect(query.get('cashflow_types')).toBe('CSD,CSW,JNLC,ACATC');
+      expect(query.has('start')).toBe(false); expect(query.has('end')).toBe(false);
+    });
+
+  it.each([[0, '1Min'], [1, '1Min'], [1.01, '5Min'], [7, '5Min'], [7.01, '15Min'], [30, '15Min'], [30.01, '1D'], [365, '1D']] as const)(
+    'uses %s-day account age for all-time resolution while preserving the full lifetime', async (days, timeframe) => {
+      const createdAt = new Date(Date.now() - days * 86_400_000).toISOString();
+      fetchMock.mockResolvedValueOnce(response({ ...account, created_at: createdAt }))
+        .mockResolvedValueOnce(response({ timestamp: [1000, 2000], equity: [10000, 10050], profit_loss: [0, 50], base_value: 10000 }));
+      const api = new AlpacaApi(credentials); await api.getAccount();
+      expect((await api.getPortfolioHistory('ALL')).profitLoss).toEqual([0, 50]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const query = new URL(String(fetchMock.mock.calls[1][0])).searchParams;
+      expect(query.get('timeframe')).toBe(timeframe); expect(query.get('start')).toBe(createdAt);
+      expect(query.get('end')).toBe(new Date().toISOString()); expect(query.has('period')).toBe(false);
+    });
 
   it('keeps transfers in missing equity windows in subsequent P&L', async () => {
     fetchMock.mockResolvedValueOnce(response({
