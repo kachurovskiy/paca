@@ -12,7 +12,7 @@ test('charts handle a single observation without losing their axes', async ({ pa
   await broker.connected(page);
   await expect(page.getByRole('region', { name: 'SPY chart', exact: true })).toContainText('Last close: $100.00');
   await page.getByRole('link', { name: 'performance', exact: true }).click();
-  const chart = page.getByRole('img', { name: 'Portfolio equity', exact: true });
+  const chart = page.getByRole('img', { name: 'Portfolio P/L excluding cash transfers', exact: true });
   await expect(chart.locator('circle')).toBeVisible();
   await expect(chart.locator('text').filter({ hasText: '10:30' })).toBeVisible();
   expect(broker.errors).toEqual([]);
@@ -32,6 +32,7 @@ test('chart intervals and performance periods work with one click and preserve t
   await period.click();
   await expect(period).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => broker.requests.some(url => url.pathname === '/v2/account/portfolio/history' && url.searchParams.get('period') === '1W')).toBe(true);
+  await page.getByRole('group', { name: 'Performance metric' }).getByRole('button', { name: 'Equity', exact: true }).click();
   const chart = page.getByRole('img', { name: 'Portfolio equity', exact: true });
   await expect(chart).toBeVisible();
   await expect(chart).toContainText('Equity · USD');

@@ -24,7 +24,7 @@ for (const standalone of [false, true]) {
     await page.getByLabel('Add ticker').fill('STEADY'); await page.getByRole('button', { name: 'Add symbol' }).click();
     await expect(page.getByRole('button', { name: 'Remove STEADY' })).toBeVisible();
     await page.getByRole('link', { name: 'performance', exact: true }).click();
-    await expect(page.getByRole('img', { name: 'Portfolio equity' })).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Portfolio P/L excluding cash transfers' })).toBeVisible();
     await page.getByRole('link', { name: 'history', exact: true }).click();
     await expect(page.getByText('Broker activity import complete.')).toBeVisible();
     const download = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export history' }).click();

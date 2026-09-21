@@ -240,13 +240,15 @@ td button { font-size: 1rem; min-height: 30px; padding: 5px 8px; }
 .performance-page { max-width: 1140px; }
 .performance-panel { padding: 28px; }
 .performance-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 30px; }
+.performance-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; max-width: 100%; }
 .equity-value { font-size: 34px; font-weight: 700; letter-spacing: -1px; margin: 6px 0; font-variant-numeric: tabular-nums; }
 .performance-return { display: inline-block; min-height: 22px; }
 .performance-return small { font-size: 1rem; }
-.equity-chart-container { width: 100%; min-width: 0; }
+.performance-chart-container { width: 100%; min-width: 0; }
 .performance-chart { display: block; width: 100%; overflow: visible; }
 .axis-label { fill: var(--muted); font: 1rem 'DM Sans Variable', sans-serif; font-variant-numeric: tabular-nums; }
 .chart-gridline { stroke: #e8edf0; stroke-width: 1; }
+.chart-zero-line { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
 .chart-axis { fill: none; stroke: #cdd8de; stroke-width: 1; }
 .chart-loading { display: grid; place-content: center; min-height: 330px; }
 .robot-card { margin: 16px 0; padding: 24px; overflow-wrap: anywhere; }

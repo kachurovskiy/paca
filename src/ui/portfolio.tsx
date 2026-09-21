@@ -4,12 +4,13 @@ import type { Period } from '../core/types';
 import { download, money, number, useFeature } from './hooks';
 import { projectRunMetrics } from '../portfolio/accounting';
 import { EmptyRow, Pnl, Segmented, TablePanel, Timestamp } from './controls';
-import { EquityChart } from './equity-chart';
+import { PerformanceChart, type PerformanceMetric } from './performance-chart';
 
 const periods: { value: Period; label: string }[] = [{ value: '1D', label: '1D' }, { value: '1W', label: '1W' }, { value: '1M', label: '1M' }, { value: 'ALL', label: 'All time' }];
 
 export function PortfolioView({ session, history = false }: { session: Session; history?: boolean }) {
   const model = useFeature(session.portfolio), [period, setPeriod] = useState<Period>('1M'), [loading, setLoading] = useState(true);
+  const [metric, setMetric] = useState<PerformanceMetric>('pnl');
   useEffect(() => {
     let active = true; setLoading(true);
     const work = history ? session.portfolio.history() : session.portfolio.performance(period);
@@ -17,8 +18,8 @@ export function PortfolioView({ session, history = false }: { session: Session; 
     return () => { active = false; };
   }, [session, period, history]);
   const projection = session.portfolio.projection(Intl.DateTimeFormat().resolvedOptions().timeZone);
-  const values = model.history?.equity ?? [];
-  return <div class={`feature-page ${history ? 'history-page' : 'performance-page'}`}><div class="page-heading"><div><span class="eyebrow">YOUR PORTFOLIO</span><h1>{history ? 'Trade history and outcomes' : 'Portfolio performance'}</h1><p>{history ? 'A closer look at your trades and realized results.' : 'Track your account equity over time.'}</p></div>
+  const values = (metric === 'pnl' ? model.history?.profitLoss : model.history?.equity) ?? [];
+  return <div class={`feature-page ${history ? 'history-page' : 'performance-page'}`}><div class="page-heading"><div><span class="eyebrow">YOUR PORTFOLIO</span><h1>{history ? 'Trade history and outcomes' : 'Portfolio performance'}</h1><p>{history ? 'A closer look at your trades and realized results.' : 'Track profit and loss excluding cash transfers, or view total account equity.'}</p></div>
     {history && <div class="toolbar"><button onClick={() => void session.portfolio.history()}>Refresh history</button><button onClick={() => download('paca-history.json', JSON.stringify({ activities: model.activities, complete: model.activitiesComplete, runs: model.historyRuns }, null, 2))}>Export history</button></div>}</div>
     {history ? <>
       <div class="history-note"><p class={model.activitiesError || !model.activitiesComplete ? 'notice' : ''}>{model.activitiesError || (model.activitiesComplete ? 'Broker activity import complete.' : 'History unavailable or incomplete.')}</p>
@@ -33,11 +34,12 @@ export function PortfolioView({ session, history = false }: { session: Session; 
           <p>Realized gross P/L: <Pnl value={metrics.grossRealizedPnlUsd.value === null ? null : Number(metrics.grossRealizedPnlUsd.value)} /> · Net P/L: <Pnl value={metrics.netTotalPnlUsd.value === null ? null : Number(metrics.netTotalPnlUsd.value)} /></p>
           <p>{metrics.netTotalPnlUsd.reasons.join('; ') || 'Complete attributed fill accounting.'}</p><pre>{JSON.stringify({ run, metrics }, null, 2)}</pre></details>;
       })}{!model.historyRuns.length && <p class="empty-state">Completed Robot runs will appear here.</p>}</section></>
-      : <section class="panel performance-panel" aria-busy={loading}><div class="performance-heading"><div><span class="eyebrow">ACCOUNT EQUITY</span><h2 class="equity-value">{loading ? '—' : money(values.at(-1))}</h2>
-        <span class="performance-return">{!loading && <><Pnl value={model.history?.profitLoss.at(-1)} /> <small>reported P/L · {period === 'ALL' ? 'all time' : period.toLowerCase()}</small></>}</span></div>
-        <Segmented label="Performance period" value={period} onChange={setPeriod} options={periods} /></div>
+      : <section class="panel performance-panel" aria-busy={loading}><div class="performance-heading"><div><span class="eyebrow">{metric === 'pnl' ? 'PROFIT / LOSS' : 'ACCOUNT EQUITY'}</span><h2 class="equity-value">{loading ? '—' : metric === 'pnl' ? <Pnl value={values.at(-1)} /> : money(values.at(-1))}</h2>
+        <span class="performance-return">{!loading && <>{metric === 'equity' && <><Pnl value={model.history?.profitLoss.at(-1)} /> </>}<small>{metric === 'pnl' ? 'Cash transfers excluded' : 'P/L excluding cash transfers'} · {period === 'ALL' ? 'all time' : period.toLowerCase()}</small></>}</span></div>
+        <div class="performance-controls"><Segmented<PerformanceMetric> label="Performance metric" value={metric} onChange={setMetric} options={[{ value: 'pnl', label: 'P/L' }, { value: 'equity', label: 'Equity' }]} />
+          <Segmented label="Performance period" value={period} onChange={setPeriod} options={periods} /></div></div>
         {model.historyError && !loading && <p role="alert">{model.historyError}</p>}
-        {loading ? <div class="empty-state chart-loading" role="status">Loading performance…</div> : model.history && values.length ? <EquityChart history={model.history} /> : <div class="empty-state chart-loading">Performance unavailable.</div>}
-        <div class="chart-caption"><small>Account equity · USD</small><small>New York time (ET)</small></div></section>}
+        {loading ? <div class="empty-state chart-loading" role="status">Loading performance…</div> : model.history && values.length ? <PerformanceChart history={model.history} metric={metric} /> : <div class="empty-state chart-loading">Performance unavailable.</div>}
+        <div class="chart-caption"><small>{metric === 'pnl' ? 'P/L excluding cash transfers' : 'Account equity'} · USD</small><small>New York time (ET)</small></div></section>}
   </div>;
 }
