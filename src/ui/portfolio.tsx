@@ -7,6 +7,7 @@ import { EmptyRow, Pnl, Segmented, TablePanel, Timestamp } from './controls';
 import { PerformanceChart, type PerformanceMetric } from './performance-chart';
 
 const periods: { value: Period; label: string }[] = [{ value: '1D', label: '1D' }, { value: '1W', label: '1W' }, { value: '1M', label: '1M' }, { value: 'ALL', label: 'All time' }];
+const shares = (qty: number) => qty.toLocaleString('en-US', { maximumFractionDigits: 9 });
 
 export function PortfolioView({ session, history = false }: { session: Session; history?: boolean }) {
   const model = useFeature(session.portfolio), [period, setPeriod] = useState<Period>('1M'), [loading, setLoading] = useState(true);
@@ -28,7 +29,21 @@ export function PortfolioView({ session, history = false }: { session: Session; 
       <div class="history-grid"><TablePanel title="Monthly results"><table><thead><tr><th>Month</th><th class="numeric">Realized P/L</th><th class="numeric">Trades</th><th class="numeric">Win rate</th><th class="numeric">Profit factor</th></tr></thead><tbody>{projection.summary.months.map(month => <tr key={month.month}><td>{month.month}</td><td class="numeric"><Pnl value={month.realizedPl} /></td><td class="numeric">{month.closedTrades}</td><td class="numeric">{month.winRate === null ? '—' : `${number(month.winRate)}%`}</td><td class="numeric">{number(month.profitFactor)}</td></tr>)}{!projection.summary.months.length && <EmptyRow columns={5}>No closed trades in this history.</EmptyRow>}</tbody></table></TablePanel>
       <TablePanel title="Daily results"><table><thead><tr><th>Date</th><th class="numeric">Realized P/L</th><th class="numeric">Exits</th></tr></thead><tbody>{projection.summary.days.map(day => <tr key={day.date}><td>{day.date}</td><td class="numeric"><Pnl value={day.realizedPl} /></td><td class="numeric">{day.exits}</td></tr>)}{!projection.summary.days.length && <EmptyRow columns={3}>Daily results appear after a closed trade.</EmptyRow>}</tbody></table></TablePanel>
       <TablePanel title="Ticker results" className="full-width"><table><thead><tr><th>Symbol</th><th class="numeric">Closed / open</th><th class="numeric">Realized P/L</th><th class="numeric">Unrealized P/L</th><th class="numeric">Total P/L</th></tr></thead><tbody>{projection.tickers.map(ticker => <tr key={ticker.symbol}><td><strong>{ticker.symbol}</strong></td><td class="numeric">{ticker.closedTrades} / {ticker.openTrades}</td><td class="numeric"><Pnl value={ticker.realizedPl} /></td><td class="numeric"><Pnl value={ticker.unrealizedPl} /></td><td class="numeric"><Pnl value={ticker.totalPl} /></td></tr>)}{!projection.tickers.length && <EmptyRow columns={5}>No ticker results to display.</EmptyRow>}</tbody></table></TablePanel>
-      <TablePanel title="Actual fills" className="full-width"><table><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th class="numeric">Quantity</th><th class="numeric">Price</th></tr></thead><tbody>{model.activities.map(activity => <tr key={activity.id}><td><Timestamp value={activity.transactionTime} /></td><td><strong>{activity.symbol}</strong></td><td><span class={`side-badge ${activity.side}`}>{activity.side}</span></td><td class="numeric">{number(activity.qty)}</td><td class="numeric">{money(activity.price)}</td></tr>)}{!model.activities.length && <EmptyRow columns={5}>No fills in the imported history.</EmptyRow>}</tbody></table></TablePanel></div>
+      <TablePanel title="Trades" className="full-width">
+        <p>Buys for the same ticker and time, including partial fills of one order, form one trade. Sells match the oldest buys first (FIFO).</p>
+        <table><thead><tr><th>Opened</th><th>Last sold</th><th>Symbol</th><th>Status</th><th class="numeric">Quantity</th><th class="numeric">Avg. buy</th><th class="numeric">Avg. sell</th><th class="numeric">Realized P/L</th></tr></thead>
+          <tbody>{projection.trades.trades.map(trade => <tr key={trade.id}>
+            <td><Timestamp value={trade.openedAt} /></td>
+            <td>{trade.lastSoldAt ? <Timestamp value={trade.lastSoldAt} /> : '—'}</td>
+            <td><strong>{trade.symbol}</strong></td>
+            <td><span class="status-badge">{trade.closedAt ? 'Closed' : trade.soldQty > 0 ? 'Partially sold' : 'Open'}</span></td>
+            <td class="numeric">{shares(trade.qty)}<small class="cell-detail">{shares(trade.soldQty)} sold · {shares(trade.openQty)} open</small></td>
+            <td class="numeric">{money(trade.entryPrice)}</td>
+            <td class="numeric">{money(trade.exitPrice)}</td>
+            <td class="numeric"><Pnl value={trade.soldQty > 0 ? trade.realizedPl : null} /></td>
+          </tr>)}{!projection.trades.trades.length && <EmptyRow columns={8}>No trades in the imported history.</EmptyRow>}</tbody>
+        </table>
+      </TablePanel></div>
       <section class="panel ended-runs"><h2>Ended Robots</h2>{model.historyRuns.map(run => {
         const metrics = projectRunMetrics(run, new Date().toISOString());
         return <details key={run.id}><summary>{run.approved.plan.symbol} · ended {run.endedAt ? new Date(run.endedAt).toLocaleString() : '—'}</summary>
